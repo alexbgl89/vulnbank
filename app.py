@@ -10,7 +10,7 @@ import auth
 from werkzeug.utils import secure_filename 
 from flask_swagger_ui import get_swaggerui_blueprint
 from flask_cors import CORS
-from database import init_connection_pool, init_db, execute_query, execute_transaction
+from database import init_db, execute_query, execute_transaction
 from ai_agent_deepseek import ai_agent
 import time
 from functools import wraps
@@ -25,9 +25,6 @@ load_dotenv()
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)
-
-# Initialize database connection pool
-init_connection_pool()
 
 SWAGGER_URL = '/api/docs'
 API_URL = '/static/openapi.json'
@@ -201,7 +198,7 @@ def register():
             
             # Check if username exists
             existing_user = execute_query(
-                "SELECT username FROM users WHERE username = %s",
+                "SELECT username FROM users WHERE username = ?",
                 (user_data.get('username'),)
             )
             
@@ -227,7 +224,7 @@ def register():
             # Build the SQL query dynamically
             query = f"""
                 INSERT INTO users ({', '.join(fields)})
-                VALUES ({', '.join(['%s'] * len(fields))})
+                VALUES ({', '.join(['?'] * len(fields))})
                 RETURNING id, username, account_number, balance, is_admin
             """
             
@@ -352,12 +349,12 @@ def debug_users():
 def dashboard(current_user):
     # Vulnerability: No input validation on user_id
     user = execute_query(
-        "SELECT * FROM users WHERE id = %s",
+        "SELECT * FROM users WHERE id = ?",
         (current_user['user_id'],)
     )[0]
     
     loans = execute_query(
-        "SELECT * FROM loans WHERE user_id = %s",
+        "SELECT * FROM loans WHERE user_id = ?",
         (current_user['user_id'],)
     )
     
@@ -422,7 +419,7 @@ def transfer(current_user):
         # Get sender's account number
         # Race condition vulnerability in checking balance
         sender_data = execute_query(
-            "SELECT account_number, balance FROM users WHERE id = %s",
+            "SELECT account_number, balance FROM users WHERE id = ?",
             (current_user['user_id'],)
         )[0]
         
@@ -435,17 +432,17 @@ def transfer(current_user):
                 # Vulnerability: No transaction atomicity
                 queries = [
                     (
-                        "UPDATE users SET balance = balance - %s WHERE id = %s",
+                        "UPDATE users SET balance = balance - ? WHERE id = ?",
                         (amount, current_user['user_id'])
                     ),
                     (
-                        "UPDATE users SET balance = balance + %s WHERE account_number = %s",
+                        "UPDATE users SET balance = balance + ? WHERE account_number = ?",
                         (amount, to_account)
                     ),
                     (
                         """INSERT INTO transactions 
                            (from_account, to_account, amount, transaction_type, description)
-                           VALUES (%s, %s, %s, %s, %s)""",
+                           VALUES (?, ?, ?, ?, ?)""",
                         (from_account, to_account, amount, 'transfer', 
                          data.get('description', 'Transfer'))
                     )
@@ -552,7 +549,7 @@ def upload_profile_picture(current_user):
         
         # Update database with just the filename
         execute_query(
-            "UPDATE users SET profile_picture = %s WHERE id = %s",
+            "UPDATE users SET profile_picture = ? WHERE id = ?",
             (filename, current_user['user_id']),
             fetch=False
         )
@@ -605,7 +602,7 @@ def upload_profile_picture_url(current_user):
 
         # Store just the filename in DB (same pattern as file upload)
         execute_query(
-            "UPDATE users SET profile_picture = %s WHERE id = %s",
+            "UPDATE users SET profile_picture = ? WHERE id = ?",
             (filename, current_user['user_id']),
             fetch=False
         )
@@ -773,7 +770,7 @@ def request_loan(current_user):
         amount = float(data.get('amount'))
         
         execute_query(
-            "INSERT INTO loans (user_id, amount) VALUES (%s, %s)",
+            "INSERT INTO loans (user_id, amount) VALUES (?, ?)",
             (current_user['user_id'], amount),
             fetch=False
         )
@@ -812,7 +809,7 @@ def approve_loan(current_user, loan_id):
         # Vulnerability: Race condition in loan approval
         # Vulnerability: No validation if loan is already approved
         loan = execute_query(
-            "SELECT * FROM loans WHERE id = %s",
+            "SELECT * FROM loans WHERE id = ?",
             (loan_id,)
         )[0]
         
@@ -821,11 +818,11 @@ def approve_loan(current_user, loan_id):
             # Vulnerability: No validation of loan amount
             queries = [
                 (
-                    "UPDATE loans SET status='approved' WHERE id = %s",
+                    "UPDATE loans SET status='approved' WHERE id = ?",
                     (loan_id,)
                 ),
                 (
-                    "UPDATE users SET balance = balance + %s WHERE id = %s",
+                    "UPDATE users SET balance = balance + ? WHERE id = ?",
                     (float(loan[2]), loan[1])
                 )
             ]
@@ -877,7 +874,7 @@ def delete_account(current_user, user_id):
         # Vulnerability: No audit logging
         # Vulnerability: No backup creation
         execute_query(
-            "DELETE FROM users WHERE id = %s",
+            "DELETE FROM users WHERE id = ?",
             (user_id,),
             fetch=False
         )
@@ -953,7 +950,7 @@ def forgot_password():
                 
                 # Store the reset PIN in database (in plaintext - CWE-319)
                 execute_query(
-                    "UPDATE users SET reset_pin = %s WHERE username = %s",
+                    "UPDATE users SET reset_pin = ? WHERE username = ?",
                     (reset_pin, username),
                     fetch=False
                 )
@@ -998,7 +995,7 @@ def reset_password():
             # Vulnerability: No rate limiting on PIN attempts
             # Vulnerability: Timing attack possible in PIN verification
             user = execute_query(
-                "SELECT id FROM users WHERE username = %s AND reset_pin = %s",
+                "SELECT id FROM users WHERE username = ? AND reset_pin = ?",
                 (username, reset_pin)
             )
             
@@ -1006,7 +1003,7 @@ def reset_password():
                 # Vulnerability: No password complexity requirements
                 # Vulnerability: No password history check
                 execute_query(
-                    "UPDATE users SET password = %s, reset_pin = NULL WHERE username = %s",
+                    "UPDATE users SET password = ?, reset_pin = NULL WHERE username = ?",
                     (new_password, username),
                     fetch=False
                 )
@@ -1052,7 +1049,7 @@ def api_v1_forgot_password():
             
             # Store the reset PIN in database (in plaintext - CWE-319)
             execute_query(
-                "UPDATE users SET reset_pin = %s WHERE username = %s",
+                "UPDATE users SET reset_pin = ? WHERE username = ?",
                 (reset_pin, username),
                 fetch=False
             )
@@ -1101,7 +1098,7 @@ def api_v2_forgot_password():
             
             # Store the reset PIN in database (in plaintext - CWE-319)
             execute_query(
-                "UPDATE users SET reset_pin = %s WHERE username = %s",
+                "UPDATE users SET reset_pin = ? WHERE username = ?",
                 (reset_pin, username),
                 fetch=False
             )
@@ -1143,7 +1140,7 @@ def api_v1_reset_password():
         # Vulnerability: No rate limiting on PIN attempts
         # Vulnerability: Timing attack possible in PIN verification
         user = execute_query(
-            "SELECT id FROM users WHERE username = %s AND reset_pin = %s",
+            "SELECT id FROM users WHERE username = ? AND reset_pin = ?",
             (username, reset_pin)
         )
         
@@ -1151,7 +1148,7 @@ def api_v1_reset_password():
             # Vulnerability: No password complexity requirements
             # Vulnerability: No password history check
             execute_query(
-                "UPDATE users SET password = %s, reset_pin = NULL WHERE username = %s",
+                "UPDATE users SET password = ?, reset_pin = NULL WHERE username = ?",
                 (new_password, username),
                 fetch=False
             )
@@ -1200,7 +1197,7 @@ def api_v2_reset_password():
         # Vulnerability: No rate limiting on PIN attempts
         # Vulnerability: Timing attack possible in PIN verification
         user = execute_query(
-            "SELECT id FROM users WHERE username = %s AND reset_pin = %s",
+            "SELECT id FROM users WHERE username = ? AND reset_pin = ?",
             (username, reset_pin)
         )
         
@@ -1208,7 +1205,7 @@ def api_v2_reset_password():
             # Vulnerability: No password complexity requirements
             # Vulnerability: No password history check
             execute_query(
-                "UPDATE users SET password = %s, reset_pin = NULL WHERE username = %s",
+                "UPDATE users SET password = ?, reset_pin = NULL WHERE username = ?",
                 (new_password, username),
                 fetch=False
             )
@@ -1458,7 +1455,7 @@ def update_card_limit(current_user, card_id):
                 value = str(value)
             
             # Vulnerability: Direct field name injection
-            update_fields.append(f"{key} = %s")
+            update_fields.append(f"{key} = ?")
             update_values.append(value)
             updated_fields_list.append(key)  # Add to list instead of dict_keys
             
@@ -1615,7 +1612,7 @@ def create_bill_payment(current_user):
         payment_query = """
             INSERT INTO bill_payments 
             (user_id, biller_id, amount, payment_method, card_id, reference_number, description)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             RETURNING id
         """
         payment_values = (
@@ -1633,15 +1630,15 @@ def create_bill_payment(current_user):
         if payment_method == 'virtual_card':
             card_update = """
                 UPDATE virtual_cards 
-                SET current_balance = current_balance - %s 
-                WHERE id = %s
+                SET current_balance = current_balance - ? 
+                WHERE id = ?
             """
             queries.append((card_update, (amount, card_id)))
         else:
             balance_update = """
                 UPDATE users 
-                SET balance = balance - %s 
-                WHERE id = %s
+                SET balance = balance - ? 
+                WHERE id = ?
             """
             queries.append((balance_update, (amount, current_user['user_id'])))
         
@@ -1743,7 +1740,7 @@ def ai_chat_authenticated(current_user):
         # VULNERABILITY: Pass sensitive user context directly to AI
         # Fetch fresh user data from database (VULNERABILITY: Additional DB query)
         fresh_user_data = execute_query(
-            "SELECT id, username, account_number, balance, is_admin, profile_picture FROM users WHERE id = %s",
+            "SELECT id, username, account_number, balance, is_admin, profile_picture FROM users WHERE id = ?",
             (current_user['user_id'],),
             fetch=True
         )
