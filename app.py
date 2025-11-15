@@ -1937,4 +1937,4 @@ if __name__ == '__main__':
     init_db()
     init_auth_routes(app)
     # Vulnerability: Debug mode enabled in production
-    app.run(host='0.0.0.0', port=50000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
