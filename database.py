@@ -141,7 +141,7 @@ def init_db():
                     INSERT INTO users (username, password, account_number, balance, is_admin) 
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                    ('alice', 'password', '0869065552', 1000.0, 1)
+                    ('alice', 'password', '0869065552', 1250.0, 0)
                 )
             cursor.execute("SELECT * FROM users WHERE username='bob'")
             if not cursor.fetchone():
@@ -150,7 +150,7 @@ def init_db():
                     INSERT INTO users (username, password, account_number, balance, is_admin) 
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                    ('bob', 'password', '6955215471', 1000.0, 0)
+                    ('bob', 'password', '6955215471', 700.0, 0)
                 )
             
             # Create bill categories table
