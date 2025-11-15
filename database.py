@@ -1,5 +1,6 @@
 import os
 import sqlite3
+
 from datetime import datetime
 # 'time' import removed as it was only used for connection retries
 # 'psycopg2' and 'pool' imports replaced with 'sqlite3'
@@ -132,6 +133,25 @@ def init_db():
                     """,
                     ('admin', 'admin123', 'ADMIN001', 1000000.0, 1) # True -> 1
                 )
+            # Create some user
+            cursor.execute("SELECT * FROM users WHERE username='alice'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    INSERT INTO users (username, password, account_number, balance, is_admin) 
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    ('alice', 'password', '0869065552', 1000.0, 1)
+                )
+            cursor.execute("SELECT * FROM users WHERE username='bob'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    INSERT INTO users (username, password, account_number, balance, is_admin) 
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    ('bob', 'password', '6955215471', 1000.0, 0)
+                )
             
             # Create bill categories table
             cursor.execute('''
@@ -142,7 +162,6 @@ def init_db():
                     is_active INTEGER DEFAULT 1 -- 1 for TRUE
                 )
             ''')
-
             # Create billers table
             # - DECIMAL -> REAL
             cursor.execute('''
@@ -202,7 +221,33 @@ def init_db():
                 (3, 'HealthFirst Insurance', 'INS001', 'Health Insurance', 100),
                 (4, 'Universal Bank Card', 'CC001', 'Credit Card Payments', 50)
             """)
-            
+
+            # Insert some data
+            # - ON CONFLICT syntax is compatible with SQLite
+            cursor.execute("""
+                INSERT OR IGNORE INTO bill_payments ("id", "user_id", "biller_id", "amount", "payment_method", "card_id", "reference_number", "status", "created_at", "processed_at", "description") 
+                VALUES 
+                (1, 2, 4, 50, 'balance', NULL, 'BILL1763215177', 'pending', '2025-11-15 13:59:37', NULL, 'Bill Payment'),
+                (2, 3, 5, 500, 'balance', NULL, 'BILL1763215225', 'pending', '2025-11-15 14:00:25', NULL, 'Bill Payment')
+                ON CONFLICT (id) DO NOTHING
+            """)
+            cursor.execute("""
+                INSERT OR IGNORE INTO transactions ("id", "from_account", "to_account", "amount", "timestamp", "transaction_type", "description")
+                VALUES
+                (1, '0869065552', '6955215471', 200, '2025-11-15 13:59:01', 'transfer', 'Meal')
+            """)
+            cursor.execute("""
+                INSERT OR IGNORE INTO virtual_cards ("id", "user_id", "card_number", "cvv", "expiry_date", "card_limit", "current_balance", "is_frozen", "is_active", "created_at", "last_used_at", "card_type")
+                VALUES
+                (1, 2, '2537791962167271', '157', '11/26', 1000, 0, 0, 1, '2025-11-15 13:59:21', NULL, 'standard'),
+                (2, 3, '6424135982319027', '636', '11/26', 2000, 0, 0, 1, '2025-11-15 14:00:06', NULL, 'premium')
+            """)
+            cursor.execute("""
+            INSERT OR IGNORE INTO loans ("id", "user_id", "amount", "status")
+            VALUES
+            (1, 2, 500, 'approved')
+            """)
+
             # conn.commit() is handled by the 'with conn:' block
             print("Database initialized successfully")
             
